@@ -1,0 +1,82 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Converti dati KPI</title>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--ink:#15181d;--ink2:#4a515c;--line:#e3e6ea;--s1:#2a78d6}
+@media (prefers-color-scheme:dark){:root{--bg:#111317;--surf:#1a1d22;--ink:#f0efec;--ink2:#c3c2b7;--line:#2a2e35;--s1:#3987e5}}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;margin:0;padding:24px 16px}
+.w{max-width:640px;margin:0 auto;background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:20px}
+h1{font-size:20px;margin:0 0 8px}p,li{font-size:14px;color:var(--ink2);line-height:1.5}
+button{font:500 14px inherit;background:var(--s1);color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer}button:disabled{opacity:.5}
+#m{font-size:14px;color:var(--ink);margin-top:12px}
+</style></head><body><div class="w">
+<h1>Converti l'Excel in data.json</h1>
+<p>Scegli il file Excel (foglio <b>FoglioDB</b>). La conversione avviene <b>solo nel tuo browser</b>: il file e i nomi non vengono inviati da nessuna parte. Si scarica un file <code>data.json</code> con soli codici anonimi e conteggi, da caricare poi su GitHub al posto di quello vecchio.</p>
+<p><input type="file" id="f" accept=".xlsx,.xls,.xlsm"></p>
+<p><button id="d" disabled>Scarica data.json</button></p>
+<div id="m" role="status"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* Costruisce il dataset compatto da righe del foglio. Condiviso tra pagina e test Node. */
+function buildDataset(rows){
+  var BADC={'NAN':1,'#REF!':1,'#N/A':1,'#N/D':1,'(VUOTO)':1,'0':1,'E':1,'PAESE':1,'':1};
+  function up(x){return x==null?'':String(x).replace(/\s+/g,' ').trim().toUpperCase();}
+  function toISO(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'){var d=new Date(Math.round((v-25569)*864e5));return d.toISOString().slice(0,10);}
+    if(v instanceof Date){return new Date(v.getTime()+12*36e5).toISOString().slice(0,10);}
+    var s=String(v).trim(),m=s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if(m)return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
+    m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[0]:null;
+  }
+  function num(v){var n=parseFloat(String(v).replace(',','.'));return isFinite(n)?n:0;}
+  function pick(r,names){for(var i=0;i<names.length;i++){if(r[names[i]]!==undefined)return r[names[i]];}return undefined;}
+  var dict={cc:[],tipo:[],contenuto:[],insegna:[],paese:['ITALIA','ESTERO','N.D.'],city:[]},ix={cc:{},tipo:{},contenuto:{},insegna:{},city:{}};
+  function id(k,v){var m=ix[k];if(m[v]===undefined){m[v]=dict[k].length;dict[k].push(v);}return m[v];}
+  var posts=[],pix={},fans={},nf=0,R=[],skipped=0,bad=0;
+  rows.forEach(function(raw){
+    var r={};Object.keys(raw).forEach(function(k){r[String(k).trim().toUpperCase().replace(/[’`´]/g,"'")]=raw[k];});
+    var date=toISO(r['DATA']),ins=up(r['INSEGNA']);
+    if(!date||!ins){skipped++;return;}
+    var cc=up(r['CC']);if(!cc){skipped++;return;}
+    var tipo=up(r['TIPO'])||'N.D.';if(tipo==='NEGOZI')tipo='NEGOZIO';
+    var cont=up(r['CONTENUTO']);if(!cont||cont==='NAN')cont='N.D.';
+    cont=cont.replace(/À/g,"A'").replace(/FESTIVITA''/g,"FESTIVITA'").replace("POST DI INTRATTENIMENTO","POST D'INTRATTENIMENTO");
+    var det=up(r['DETTAGLIO']);
+    var pa=up(r['PAESE']);var pe=pa==='ITALIA'?0:(['','NAN','#REF!','#N/A','#N/D','0','(VUOTO)'].indexOf(pa)>=0?2:1);
+    var ct=up(pick(r,["CITTA'","CITTA","CITTÀ"]));if(ct==='VVERONA')ct='VERONA';
+    var ci=BADC[ct]?-1:id('city',ct);
+    var key=[date,ins,cc,cont,det].join('|'),p=pix[key];
+    if(p===undefined){p=posts.length;pix[key]=p;posts.push([date,id('insegna',ins),id('cc',cc),id('contenuto',cont),det,0,0,id('tipo',tipo)]);}
+    posts[p][5]+=num(r['COMMENTI']);posts[p][6]+=num(r['CONDIVISIONI']);
+    var fn=up(r['FAN']),f=-1;
+    if(fn&&fn!=='NAN'){if(fans[fn]===undefined)fans[fn]=nf++;f=fans[fn];}
+    R.push(p,f,ci,pe);
+  });
+  var ver='v'+Date.now().toString(36),chunks={},RC=5000*4,PC=700,nr=0,np=0;
+  for(var i=0;i<R.length;i+=RC){chunks[ver+'_r'+nr++]={t:'r',s:R.slice(i,i+RC).join(',')};}
+  for(var j=0;j<posts.length;j+=PC){chunks[ver+'_p'+np++]={t:'p',s:JSON.stringify(posts.slice(j,j+PC))};}
+  var meta={ver:ver,nr:nr,np:np,rows:R.length/4,posts:posts.length,fans:nf,dict:JSON.stringify(dict),skipped:skipped};
+  return {meta:meta,chunks:chunks};
+}
+
+function buildSingle(rows){
+  var o=buildDataset(rows),m=o.meta,rs=[],ps=[],i;
+  for(i=0;i<m.nr;i++){if(o.chunks[m.ver+'_r'+i].s)rs.push(o.chunks[m.ver+'_r'+i].s);}
+  for(i=0;i<m.np;i++){ps=ps.concat(JSON.parse(o.chunks[m.ver+'_p'+i].s));}
+  return {ver:m.ver,updated:new Date().toISOString(),rows:rs.join(','),posts:JSON.stringify(ps),dict:m.dict,nRows:m.rows,nPosts:m.posts,skipped:m.skipped};
+}
+
+
+var out=null,m=document.getElementById('m'),d=document.getElementById('d');
+document.getElementById('f').onchange=function(){var f=this.files[0];out=null;d.disabled=true;if(!f)return;m.textContent='Leggo il file…';
+ f.arrayBuffer().then(function(buf){
+  var wb=XLSX.read(buf,{type:'array'});
+  if(wb.SheetNames.indexOf('FoglioDB')<0)throw new Error('manca il foglio FoglioDB (fogli trovati: '+wb.SheetNames.join(', ')+')');
+  var rows=XLSX.utils.sheet_to_json(wb.Sheets['FoglioDB'],{defval:null}),h=Object.keys(rows[0]||{}).map(function(k){return String(k).trim().toUpperCase()});
+  var miss=['DATA','INSEGNA','CC'].filter(function(n){return h.indexOf(n)<0});if(miss.length)throw new Error('mancano le colonne: '+miss.join(', '));
+  out=buildSingle(rows);if(!out.nRows)throw new Error('nessuna riga valida');
+  var dd=JSON.parse(out.dict);
+  m.textContent='Pronto: '+out.nRows+' like, '+out.nPosts+' post, centri: '+dd.cc.join(', ')+(out.skipped?' ('+out.skipped+' righe scartate perché senza data, insegna o centro)':'')+'.';
+  d.disabled=false}).catch(function(e){m.textContent='Errore: '+e.message})};
+d.onclick=function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='data.json';a.click()};
+</script></body></html>
