@@ -32,6 +32,8 @@ button{font:inherit;color:inherit}
 .row:hover{background:var(--track)}
 .row .n{overflow-wrap:anywhere}
 .row.sel .n{font-weight:600}
+.row.st{cursor:default}.row.st:hover{background:none}.row.st:hover .tr{background:var(--track)}
+.th{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;font-size:13px;color:var(--ink2);margin-bottom:12px}.th input{width:64px;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf);color:var(--ink)}
 .tr{background:var(--track);height:12px;border-radius:0 4px 4px 0}
 .row:hover .tr{background:var(--line)}
 .tr i{display:block;height:100%;background:var(--s1);border-radius:0 4px 4px 0;min-width:2px}
@@ -84,6 +86,10 @@ td.wrap{white-space:normal;min-width:160px}
 <div class="c"><h2>Italia ed Estero</h2><p>Sul totale dei like</p><div id="paese"></div></div>
 <div class="c"><h2>Città di provenienza</h2><p id="cp"></p><div id="citta"></div></div>
 </div>
+<div class="c" style="margin-top:16px"><h2>Profilo dei clicker</h2><p id="prp"></p>
+ <div class="th"><label>Casuale da <input id="thc" type="number" min="2" max="99" inputmode="numeric"> like</label><label>Assiduo da <input id="tha" type="number" min="3" max="999" inputmode="numeric"> like</label></div>
+ <div class="g"><div class="tw"><table id="prof"></table></div><div><div style="font-size:12px;color:var(--ink2);margin-bottom:6px">Persone per numero di like</div><div id="hist"></div></div></div>
+ <p class="mnote" id="prn"></p></div>
 <div class="c" style="margin-top:16px"><h2>Post</h2><p id="pp"></p><div class="tw"><table id="post"></table></div><p style="margin:10px 0 0"><button class="btn" id="more"></button></p></div>
 <div class="c" style="margin-top:16px"><h2>Cannibalizzazione tra centri</h2><p id="ovp"></p><div class="tw" id="ov"></div><p class="mnote" id="ovn"></p></div>
 <div class="c" style="margin-top:16px"><h2>Note sui dati</h2><ul class="note" id="note"></ul></div>
@@ -104,7 +110,7 @@ var title=function(s){return s.toLowerCase().replace(/(^|[ '\-])(\S)/g,function(
 var MESI=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 var dmy=function(d){return d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4)};
 var D=null,F={};
-var DIMN={cc:'Centro',tipo:'Tipo',contenuto:'Contenuto',insegna:'Insegna',anno:'Anno',mese:'Mese',paese:'Provenienza',city:'Città',post:'Post'};
+var DIMN={cc:'Centro',tipo:'Tipo',contenuto:'Contenuto',insegna:'Insegna',anno:'Anno',mese:'Mese',paese:'Provenienza',city:'Città',post:'Post',seg:'Profilo'};
 var DIMS=Object.keys(DIMN);
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
@@ -141,6 +147,7 @@ function bars(el,d,lab,o){o=o||{};var m=agg(rowsPass(d),d),a=sorted(m,d,o.by);
 
 /* ---------- render ---------- */
 function render(refit){
+  computeSeg();
   var dict=D.dict,all=rowsPass(null),posts=D.posts;
   var ps=new Set(),fans=new Set(),com=0,sh=0,minD='9',maxD='0';
   all.forEach(function(i){var p=D.col.post[i];if(!ps.has(p)){ps.add(p);var q=posts[p];com+=q.com;sh+=q.sh;if(q.date<minD)minD=q.date;if(q.date>maxD)maxD=q.date}if(D.rf[i]>=0)fans.add(D.rf[i])});
@@ -166,9 +173,9 @@ function render(refit){
   bars('citta','city',function(k){return title(dict.city[k])},{limit:15});
   var cr=rowsPass('city'),ok=0,nd=0;cr.forEach(function(i){if(D.col.city[i]>=0)ok++;else nd++});
   $('cp').textContent=fmt(ok)+' like con città indicata, '+fmt(nd)+' senza città valida (colonna CITTA\' vuota o con errori)';
-  map(refit);posttable();overlap();notes();
+  map(refit);profile();posttable();overlap();notes();
 }
-function labelOf(d,k){var x=D.dict;
+function labelOf(d,k){var x=D.dict;if(d==='seg')return SEGN[k];
   if(d==='cc')return title(x.cc[k]);if(d==='tipo')return title(x.tipo[k]);if(d==='contenuto')return title(x.contenuto[k]);if(d==='insegna')return title(x.insegna[k]);
   if(d==='paese')return['Italia','Estero','Non disponibile'][k];if(d==='city')return title(x.city[k]);if(d==='mese')return mlab(k);
   if(d==='post'){var p=D.posts[k];return dmy(p.date)+' '+title(x.insegna[p.ins])}return String(k)}
@@ -187,6 +194,29 @@ function posttable(){var rows=rowsPass('post'),m=new Map(),pc=D.col.post;rows.fo
   $('post').innerHTML='<tr><th>Data</th><th>Centro</th><th>Insegna</th><th>Contenuto</th><th>Dettaglio</th><th>Like</th><th>Comm.</th><th>Cond.</th></tr>'+list.map(function(e){var p=D.posts[e[0]],s=F.post&&F.post.has(e[0]);
     return '<tr class="pr'+(s?' sel':'')+'" tabindex="0" role="button" aria-pressed="'+!!s+'" data-d="post" data-k="n'+e[0]+'"><td>'+dmy(p.date)+'</td><td>'+esc(title(x.cc[p.cc]))+'</td><td>'+esc(title(x.insegna[p.ins]))+'</td><td>'+esc(title(x.contenuto[p.cont]))+'</td><td class="wrap">'+esc(p.det)+'</td><td>'+fmt(e[1])+'</td><td>'+(p.com?fmt(p.com):'–')+'</td><td>'+(p.sh?fmt(p.sh):'–')+'</td></tr>'}).join('');
   $('more').hidden=tot<=12;$('more').textContent=showAll?'Mostra solo i primi 12':'Mostra tutti i '+tot+' post'}
+
+/* ---------- profilo dei clicker ---------- */
+var TH={c:2,a:5},SEGN=['Occasionale','Casuale','Assiduo','Non identificato'];
+function computeSeg(){var rows=rowsPass('seg'),m=new Map(),i;
+  rows.forEach(function(i){var f=D.rf[i];if(f<0)return;var s=m.get(f);if(!s){s=new Set();m.set(f,s)}s.add(D.col.post[i])});
+  D.fcnt=new Map();m.forEach(function(s,f){D.fcnt.set(f,s.size)});
+  for(i=0;i<D.n;i++){var f=D.rf[i];if(f<0){D.col.seg[i]=3;continue}if(!D.fcnt.has(f)){D.col.seg[i]=-1;continue}var n=D.fcnt.get(f);D.col.seg[i]=n>=TH.a?2:n>=TH.c?1:0}}
+function profile(){var P=[0,0,0],L=[0,0,0],tot=D.fcnt.size,rows=rowsPass('seg'),nid=0,tl=0;
+  D.fcnt.forEach(function(n){P[n>=TH.a?2:n>=TH.c?1:0]++});
+  rows.forEach(function(i){var s=D.col.seg[i];if(s===3)nid++;else if(s>=0){L[s]++;tl++}});
+  var rule=['1'+(TH.c>2?' – '+(TH.c-1):'')+' like',TH.c+(TH.a-1>TH.c?' – '+(TH.a-1):'')+' like','da '+TH.a+' like'],sel=F.seg;
+  $('thc').value=TH.c;$('tha').value=TH.a;
+  $('prp').textContent='Quante volte una persona ha messo like (a post diversi) con i filtri attuali. Cambia i filtri, ad esempio un anno o un trimestre, per vedere il profilo in quel periodo. Clicca un profilo per filtrare mappa e grafici.';
+  $('prof').innerHTML='<tr><th>Profilo</th><th>Regola</th><th>Persone</th><th>% persone</th><th>Like</th><th>% like</th><th>Like/persona</th></tr>'+[2,1,0].map(function(s){
+    return '<tr class="pr'+(sel&&sel.has(s)?' sel':'')+'" tabindex="0" role="button" aria-pressed="'+!!(sel&&sel.has(s))+'" data-d="seg" data-k="n'+s+'"><td>'+SEGN[s]+'</td><td><span>'+rule[s]+'</span></td><td>'+fmt(P[s])+'</td><td>'+(tot?fmt1(P[s]/tot*100):'0,0')+'%</td><td>'+fmt(L[s])+'</td><td>'+(tl?fmt1(L[s]/tl*100):'0,0')+'%</td><td>'+(P[s]?fmt1(L[s]/P[s]):'–')+'</td></tr>'}).join('')
+    +'<tr><td><b>Totale identificati</b></td><td></td><td><b>'+fmt(tot)+'</b></td><td></td><td><b>'+fmt(tl)+'</b></td><td></td><td>'+(tot?fmt1(tl/tot):'–')+'</td></tr>';
+  var B=[['1',1,1],['2',2,2],['3',3,3],['4',4,4],['5 – 9',5,9],['10 o più',10,1e9]],H=B.map(function(){return 0});
+  D.fcnt.forEach(function(n){for(var b=0;b<B.length;b++)if(n>=B[b][1]&&n<=B[b][2]){H[b]++;break}});
+  var mx=Math.max.apply(null,H.concat([1]));
+  $('hist').innerHTML=tot?B.map(function(b,k){return '<div class="row st"><span class="n">'+b[0]+' like</span><span class="tr"><i style="width:'+H[k]/mx*100+'%"></i></span><em><b>'+fmt(H[k])+'</b></em></div>'}).join(''):'<div class="empty">Nessun dato con i filtri attuali</div>';
+  $('prn').textContent=(nid?fmt(nid)+' like senza nome sul profilo non rientrano nei profili. ':'')+'Le persone sono riconosciute dal nome: omonimi o nomi cambiati falsano i conteggi. Il numero di like dipende anche da quanti post e per quanto tempo sono stati pubblicati: confronta i centri a parità di periodo.'}
+function thInit(){function ch(){var c=Math.max(2,Math.floor(+$('thc').value)||2),a=Math.floor(+$('tha').value)||5;if(a<=c)a=c+1;TH.c=c;TH.a=a;if(D)render()}
+  $('thc').onchange=ch;$('tha').onchange=ch}
 
 /* ---------- cannibalizzazione ---------- */
 function overlap(){var rows=rowsPass('cc'),x=D.dict,n=x.cc.length,S=x.cc.map(function(){return new Set()}),dt=x.cc.map(function(){return['9','0']});
@@ -207,7 +237,7 @@ function notes(){var c=D.col.city,ok=0,mapped=0,tot=0,nn=0;for(var i=0;i<D.n;i++
   $('note').innerHTML=['Un «post» è l’insieme di righe con stessa data, insegna, centro, contenuto e dettaglio (i link dei post vecchi sono generici).',
    'Città indicata per '+fmt(ok)+' like su '+fmt(D.n)+'; di questi '+fmt(mapped)+' sono posizionati sulla mappa. Le località non riconosciute e l’estero non compaiono sulla mappa ma restano nei conteggi.',
    'Commenti presenti per '+cp+' post e condivisioni per '+sp+' su '+D.posts.length+': i totali sono parziali.',
-   'I dati sono aggregati: nessun nome di persona è salvato nella dashboard.'].map(function(t){return '<li>'+t+'</li>'}).join('')}
+   'I profili dei clicker si basano sul numero di post diversi a cui una persona ha messo like, con i filtri attuali.','I dati sono aggregati: nessun nome di persona è salvato nella dashboard.'].map(function(t){return '<li>'+t+'</li>'}).join('')}
 
 /* ---------- mappa (Leaflet + OpenStreetMap) ---------- */
 var pts=[],LM=null,LL=null;
@@ -244,6 +274,7 @@ document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' '
 $('more').onclick=function(){showAll=!showAll;posttable()};
 
 /* ---------- avvio ---------- */
+thInit();
 fetch('data.json',{cache:'no-cache'}).then(function(r){if(!r.ok)throw new Error('data.json non trovato');return r.json()}).then(function(m){
   D=ingest(m);F={};$('state').textContent='';$('app').hidden=false;fitView();render();
 }).catch(function(e){$('sub').textContent='';$('state').textContent='Non riesco a caricare i dati ('+(e&&e.message||e)+'). Apri la pagina dal suo indirizzo pubblicato su GitHub Pages: dal file scaricato sul computer il browser non permette di leggere data.json.'});
