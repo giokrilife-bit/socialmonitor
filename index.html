@@ -71,6 +71,7 @@ td.wrap{white-space:normal;min-width:160px}
 <div class="top"><div><h1>KPI social dei centri commerciali</h1><p class="sub" id="sub">Caricamento dati…</p></div></div>
 <div id="app" hidden>
 <div class="flt" id="flt" role="group" aria-label="Filtro per centro" style="margin-bottom:12px"></div>
+<div class="th" id="per" style="margin-bottom:12px"><span>Periodo:</span><label>dal <input type="date" id="dfrom"></label><label>al <input type="date" id="dto"></label><button class="btn" id="dclr">Tutto il periodo</button></div>
 <div class="chips" id="chips" style="margin-bottom:12px"></div>
 <div class="kpis" id="kpis"></div>
 <div class="c" style="margin-top:16px"><h2>Provenienza sulla mappa</h2><p>Ogni cerchio è una città: più grande = più like. Clicca un cerchio per filtrare tutto per quella città; scegli un post nella tabella sotto per vedere da dove arrivano i suoi like.</p>
@@ -109,7 +110,7 @@ var norm=function(s){return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').to
 var title=function(s){return s.toLowerCase().replace(/(^|[ '\-])(\S)/g,function(m,a,b){return a+b.toUpperCase()})};
 var MESI=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 var dmy=function(d){return d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4)};
-var D=null,F={};
+var D=null,F={},R={from:'',to:''};
 var DIMN={cc:'Centro',tipo:'Tipo',contenuto:'Contenuto',insegna:'Insegna',anno:'Anno',mese:'Mese',paese:'Provenienza',city:'Città',post:'Post',seg:'Profilo'};
 var DIMS=Object.keys(DIMN);
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -127,7 +128,7 @@ function ingest(meta){var dict=JSON.parse(meta.dict),R=meta.rows.split(",").map(
 /* ---------- filtri incrociati ---------- */
 function active(ex){return DIMS.filter(function(d){return d!==ex&&F[d]&&F[d].size})}
 function rowsPass(ex){var a=active(ex),c=D.col,out=[];
-  for(var i=0;i<D.n;i++){var ok=true;for(var k=0;k<a.length;k++){if(!F[a[k]].has(c[a[k]][i])){ok=false;break}}if(ok)out.push(i)}return out}
+  for(var i=0;i<D.n;i++){var ok=true;for(var k=0;k<a.length;k++){if(!F[a[k]].has(c[a[k]][i])){ok=false;break}}if(ok&&(R.from||R.to)){var dd=D.posts[D.col.post[i]].date;if((R.from&&dd<R.from)||(R.to&&dd>R.to))ok=false}if(ok)out.push(i)}return out}
 function toggle(d,k){if(!F[d])F[d]=new Set();if(F[d].has(k))F[d].delete(k);else F[d].add(k);render(d!=='city')}
 function agg(rows,d){var m=new Map(),c=D.col[d],pc=D.col.post;
   rows.forEach(function(i){var k=c[i],e=m.get(k);if(!e){e={n:0,p:new Set()};m.set(k,e)}e.n++;e.p.add(pc[i])});
@@ -156,7 +157,8 @@ function render(refit){
   /* bottoni centro + chip */
   var cs=F.cc||new Set();
   $('flt').innerHTML='<button class="btn" data-clr="cc" aria-pressed="'+(cs.size===0)+'">Tutti i centri</button>'+dict.cc.map(function(c,i){return '<button class="btn" data-d="cc" data-k="n'+i+'" aria-pressed="'+cs.has(i)+'">'+esc(title(c))+'</button>'}).join('');
-  var ch=[];DIMS.forEach(function(d){if(F[d]&&F[d].size)F[d].forEach(function(k){ch.push('<button class="chip" data-d="'+d+'" data-k="'+esc(keyAttr(k))+'" aria-label="Rimuovi filtro">'+DIMN[d]+': '+esc(labelOf(d,k))+'</button>')})});
+  var mn=allD[0],mx=allD[allD.length-1];['dfrom','dto'].forEach(function(id){$(id).min=mn;$(id).max=mx});$('dfrom').value=R.from;$('dto').value=R.to;
+  var ch=[];if(R.from||R.to)ch.push('<button class="chip" data-clr="per" aria-label="Rimuovi filtro periodo">Periodo: '+(R.from?'dal '+dmy(R.from):'')+(R.from&&R.to?' ':'')+(R.to?'al '+dmy(R.to):'')+'</button>');DIMS.forEach(function(d){if(F[d]&&F[d].size)F[d].forEach(function(k){ch.push('<button class="chip" data-d="'+d+'" data-k="'+esc(keyAttr(k))+'" aria-label="Rimuovi filtro">'+DIMN[d]+': '+esc(labelOf(d,k))+'</button>')})});
   $('chips').innerHTML=ch.length?ch.join('')+'<button class="btn" data-clr="all">Azzera filtri</button>':'';
   var kp=[[fmt(all.length),'like'],[fmt(ps.size),'post'],[ps.size?fmt1(all.length/ps.size):'–','like medi per post'],[fmt(com),'commenti'],[fmt(sh),'condivisioni'],[fmt(fans.size),'persone distinte']];
   $('kpis').innerHTML=kp.map(function(x){return '<div class="k"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>'}).join('');
@@ -215,6 +217,8 @@ function profile(){var P=[0,0,0],L=[0,0,0],tot=D.fcnt.size,rows=rowsPass('seg'),
   var mx=Math.max.apply(null,H.concat([1]));
   $('hist').innerHTML=tot?B.map(function(b,k){return '<div class="row st"><span class="n">'+b[0]+' like</span><span class="tr"><i style="width:'+H[k]/mx*100+'%"></i></span><em><b>'+fmt(H[k])+'</b></em></div>'}).join(''):'<div class="empty">Nessun dato con i filtri attuali</div>';
   $('prn').textContent=(nid?fmt(nid)+' like senza nome sul profilo non rientrano nei profili. ':'')+'Le persone sono riconosciute dal nome: omonimi o nomi cambiati falsano i conteggi. Il numero di like dipende anche da quanti post e per quanto tempo sono stati pubblicati: confronta i centri a parità di periodo.'}
+function perInit(){function ch(){var a=$('dfrom').value,b=$('dto').value;if(a&&b&&a>b){var x=a;a=b;b=x}R.from=a;R.to=b;if(D)render(true)}
+  $('dfrom').onchange=ch;$('dto').onchange=ch;$('dclr').onclick=function(){R={from:'',to:''};if(D)render(true)}}
 function thInit(){function ch(){var c=Math.max(2,Math.floor(+$('thc').value)||2),a=Math.floor(+$('tha').value)||5;if(a<=c)a=c+1;TH.c=c;TH.a=a;if(D)render()}
   $('thc').onchange=ch;$('tha').onchange=ch}
 
@@ -268,13 +272,13 @@ function map(refit){mapInit();if(!LM){$('mnote').textContent='Mappa non disponib
 function fitView(){if(LM)LM._fitted=false}
 /* ---------- eventi ---------- */
 document.addEventListener('click',function(e){var t=e.target.closest('[data-clr]');
-  if(t&&D){if(t.dataset.clr==='all')F={};else F[t.dataset.clr]=new Set();render(true);return}
+  if(t&&D){if(t.dataset.clr==='all'){F={};R={from:'',to:''}}else if(t.dataset.clr==='per')R={from:'',to:''};else F[t.dataset.clr]=new Set();render(true);return}
   t=e.target.closest('[data-d]');if(t&&D){toggle(t.dataset.d,parseKey(t.dataset.k))}});
 document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('tr[data-d]')){e.preventDefault();e.target.click()}});
 $('more').onclick=function(){showAll=!showAll;posttable()};
 
 /* ---------- avvio ---------- */
-thInit();
+thInit();perInit();
 fetch('data.json',{cache:'no-cache'}).then(function(r){if(!r.ok)throw new Error('data.json non trovato');return r.json()}).then(function(m){
   D=ingest(m);F={};$('state').textContent='';$('app').hidden=false;fitView();render();
 }).catch(function(e){$('sub').textContent='';$('state').textContent='Non riesco a caricare i dati ('+(e&&e.message||e)+'). Apri la pagina dal suo indirizzo pubblicato su GitHub Pages: dal file scaricato sul computer il browser non permette di leggere data.json.'});
