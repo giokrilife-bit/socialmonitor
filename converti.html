@@ -76,7 +76,8 @@ document.getElementById('f').onchange=function(){var f=this.files[0];out=null;d.
   var miss=['DATA','INSEGNA','CC'].filter(function(n){return h.indexOf(n)<0});if(miss.length)throw new Error('mancano le colonne: '+miss.join(', '));
   out=buildSingle(rows);if(!out.nRows)throw new Error('nessuna riga valida');
   var dd=JSON.parse(out.dict);
-  m.textContent='Pronto: '+out.nRows+' like, '+out.nPosts+' post, centri: '+dd.cc.join(', ')+(out.skipped?' ('+out.skipped+' righe scartate perché senza data, insegna o centro)':'')+'.';
+  var nl=JSON.parse(out.posts).filter(function(p){return p[8]}).length;
+  m.textContent='Pronto: '+out.nRows+' like, '+out.nPosts+' post, link Facebook trovati per '+nl+' post'+(nl?'':' (controlla che la colonna POST contenga gli indirizzi dei post)')+', centri: '+dd.cc.join(', ')+(out.skipped?' ('+out.skipped+' righe scartate perché senza data, insegna o centro)':'')+'.';
   d.disabled=false}).catch(function(e){m.textContent='Errore: '+e.message})};
 d.onclick=function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='data.json';a.click()};
 </script></body></html>
