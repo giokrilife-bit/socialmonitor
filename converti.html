@@ -30,6 +30,7 @@ function buildDataset(rows){
   }
   function num(v){var n=parseFloat(String(v).replace(',','.'));return isFinite(n)?n:0;}
   function pick(r,names){for(var i=0;i<names.length;i++){if(r[names[i]]!==undefined)return r[names[i]];}return undefined;}
+  function cleanUrl(v){if(v==null)return '';var s=String(v).trim();if(!/^https:\/\/([a-z0-9-]+\.)?(facebook\.com|fb\.com|fb\.watch)\//i.test(s))return '';var i=s.indexOf('?');if(i<0)return s;var q=s.slice(i+1).split('&').filter(function(x){return x&&!/^(__cft__|__tn__|ref=|refsrc=|comment_id=|reply_comment_id=)/.test(x)});return q.length?s.slice(0,i)+'?'+q.join('&'):s.slice(0,i)}
   var dict={cc:[],tipo:[],contenuto:[],insegna:[],paese:['ITALIA','ESTERO','N.D.'],city:[]},ix={cc:{},tipo:{},contenuto:{},insegna:{},city:{}};
   function id(k,v){var m=ix[k];if(m[v]===undefined){m[v]=dict[k].length;dict[k].push(v);}return m[v];}
   var posts=[],pix={},fans={},nf=0,R=[],skipped=0,bad=0;
@@ -46,8 +47,8 @@ function buildDataset(rows){
     var ct=up(pick(r,["CITTA'","CITTA","CITTÀ"]));if(ct==='VVERONA')ct='VERONA';
     var ci=BADC[ct]?-1:id('city',ct);
     var key=[date,ins,cc,cont,det].join('|'),p=pix[key];
-    if(p===undefined){p=posts.length;pix[key]=p;posts.push([date,id('insegna',ins),id('cc',cc),id('contenuto',cont),det,0,0,id('tipo',tipo)]);}
-    posts[p][5]+=num(r['COMMENTI']);posts[p][6]+=num(r['CONDIVISIONI']);
+    if(p===undefined){p=posts.length;pix[key]=p;posts.push([date,id('insegna',ins),id('cc',cc),id('contenuto',cont),det,0,0,id('tipo',tipo),'']);}
+    if(!posts[p][8])posts[p][8]=cleanUrl(r['POST']);posts[p][5]+=num(r['COMMENTI']);posts[p][6]+=num(r['CONDIVISIONI']);
     var fn=up(r['FAN']),f=-1;
     if(fn&&fn!=='NAN'){if(fans[fn]===undefined)fans[fn]=nf++;f=fans[fn];}
     R.push(p,f,ci,pe);
@@ -65,7 +66,6 @@ function buildSingle(rows){
   for(i=0;i<m.np;i++){ps=ps.concat(JSON.parse(o.chunks[m.ver+'_p'+i].s));}
   return {ver:m.ver,updated:new Date().toISOString(),rows:rs.join(','),posts:JSON.stringify(ps),dict:m.dict,nRows:m.rows,nPosts:m.posts,skipped:m.skipped};
 }
-
 
 var out=null,m=document.getElementById('m'),d=document.getElementById('d');
 document.getElementById('f').onchange=function(){var f=this.files[0];out=null;d.disabled=true;if(!f)return;m.textContent='Leggo il file…';
