@@ -49,9 +49,10 @@ button{font:inherit;color:inherit}
 .dim .bar:not(.sel) i{opacity:.45}
 .bar small{font-size:10px;margin-top:4px;white-space:nowrap}
 .empty{font-size:13px;color:var(--mut);padding:8px 0}
-.map #map{height:100%;width:100%;background:var(--land)}
+.map #map,.map #map2{height:100%;width:100%;background:var(--land)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;background:var(--c);border:1px solid rgba(0,0,0,.25)}
 .map{position:relative;z-index:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);height:440px}
-.dim .mnote{font-size:12px;color:var(--ink2);margin:10px 0 0}
+.mnote{font-size:12px;color:var(--ink2);margin:10px 0 0}
 .split{display:flex;height:14px;gap:2px;margin:6px 0 10px}
 .tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}th{font-size:12px;color:var(--ink2);font-weight:500}
@@ -77,6 +78,9 @@ td.wrap{white-space:normal;min-width:160px}
 <div class="c" style="margin-top:16px"><h2>Provenienza sulla mappa</h2><p>Ogni cerchio è una città: più grande = più like. Clicca un cerchio per filtrare tutto per quella città; scegli un post nella tabella sotto per vedere da dove arrivano i suoi like.</p>
  <div class="map" id="mapw"><div id="map" role="img" aria-label="Mappa delle città di provenienza dei like"></div></div>
  <p class="mnote" id="mnote"></p></div>
+<div class="c" style="margin-top:16px"><h2>Bacino di utenza per isocrona</h2><p id="isop"></p>
+ <div class="g"><div><div class="tw"><table id="isot"></table></div><p class="mnote" id="ison"></p></div>
+ <div><div class="map" id="mapw2" style="height:380px"><div id="map2" role="img" aria-label="Mappa delle isocrone attorno ai centri commerciali"></div></div><p class="mnote" id="isom"></p></div></div></div>
 <div class="g" style="margin-top:16px">
 <div class="c"><h2>Like per centro commerciale</h2><p>Totale like e media per post. Clic per filtrare.</p><div id="cc"></div></div>
 <div class="c"><h2>Centro commerciale e negozi</h2><p>Chi pubblica il post (TIPO)</p><div id="tipo"></div></div>
@@ -111,7 +115,7 @@ var title=function(s){return s.toLowerCase().replace(/(^|[ '\-])(\S)/g,function(
 var MESI=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 var dmy=function(d){return d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4)};
 var D=null,F={},R={from:'',to:''};
-var DIMN={cc:'Centro',tipo:'Tipo',contenuto:'Contenuto',insegna:'Insegna',anno:'Anno',mese:'Mese',paese:'Provenienza',city:'Città',post:'Post',seg:'Profilo'};
+var DIMN={cc:'Centro',tipo:'Tipo',contenuto:'Contenuto',insegna:'Insegna',anno:'Anno',mese:'Mese',paese:'Provenienza',city:'Città',post:'Post',seg:'Profilo',iso:'Isocrona'};
 var DIMS=Object.keys(DIMN);
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
@@ -175,9 +179,9 @@ function render(refit){
   bars('citta','city',function(k){return title(dict.city[k])},{limit:15});
   var cr=rowsPass('city'),ok=0,nd=0;cr.forEach(function(i){if(D.col.city[i]>=0)ok++;else nd++});
   $('cp').textContent=fmt(ok)+' like con città indicata, '+fmt(nd)+' senza città valida (colonna CITTA\' vuota o con errori)';
-  map(refit);profile();posttable();overlap();notes();
+  map(refit);isoCard();profile();posttable();overlap();notes();
 }
-function labelOf(d,k){var x=D.dict;if(d==='seg')return SEGN[k];
+function labelOf(d,k){var x=D.dict;if(d==='iso')return ISON[k];if(d==='seg')return SEGN[k];
   if(d==='cc')return title(x.cc[k]);if(d==='tipo')return title(x.tipo[k]);if(d==='contenuto')return title(x.contenuto[k]);if(d==='insegna')return title(x.insegna[k]);
   if(d==='paese')return['Italia','Estero','Non disponibile'][k];if(d==='city')return title(x.city[k]);if(d==='mese')return mlab(k);
   if(d==='post'){var p=D.posts[k];return dmy(p.date)+' '+title(x.insegna[p.ins])}return String(k)}
@@ -222,6 +226,52 @@ function perInit(){function ch(){var a=$('dfrom').value,b=$('dto').value;if(a&&b
 function thInit(){function ch(){var c=Math.max(2,Math.floor(+$('thc').value)||2),a=Math.floor(+$('tha').value)||5;if(a<=c)a=c+1;TH.c=c;TH.a=a;if(D)render()}
   $('thc').onchange=ch;$('tha').onchange=ch}
 
+/* ---------- isocrone / bacini di utenza ---------- */
+var CEN={},KM=[7.5,10,15],TT=[15,20,30],ISON=['Primario · entro 15′','Secondario · 15–20′','Terziario · 20–30′','Oltre 30′','Città non nota'],BC=['#1d5fb8','#4a8fe0','#9cc2f0','#b8bec7','#d9dde3'];
+var DEFC={'NAVE DE VERO':'MARCON','PORTE DI MESTRE':'MESTRE','LE CENTURIE':'BORGORICCO'};
+function hav(a,b,c,d){var r=Math.PI/180,x=Math.sin((c-a)*r/2),y=Math.sin((d-b)*r/2),h=x*x+Math.cos(a*r)*Math.cos(c*r)*y*y;return 12742*Math.asin(Math.sqrt(h))}
+function inRing(pt,r){var x=pt[0],y=pt[1],c=false;for(var i=0,j=r.length-1;i<r.length;j=i++){var xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c}return c}
+function pip(pt,g){var polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+  for(var k=0;k<polys.length;k++){var rg=polys[k];if(inRing(pt,rg[0])){var h=false;for(var q=1;q<rg.length;q++)if(inRing(pt,rg[q])){h=true;break}if(!h)return true}}return false}
+function computeIso(){var dict=D.dict,G={};Object.keys(GAZ).forEach(function(k){G[k]=GAZ[k]});Object.keys(EXTRA).forEach(function(k){G[k]=EXTRA[k]});
+  D.cen=dict.cc.map(function(name){var c=CEN[name];if(c&&isFinite(c.lat)&&isFinite(c.lon))return{lat:+c.lat,lon:+c.lon,iso:c.iso||null,approx:!!c.approx};
+    var g=DEFC[name]&&G[DEFC[name]];return g?{lat:g[0],lon:g[1],iso:null,approx:true}:null});
+  var tab=D.cen.map(function(cen){if(!cen)return null;return D.geo.map(function(g){if(!g)return 4;var pt=[g[3],g[2]];
+    for(var b=0;b<3;b++){var ig=cen.iso&&cen.iso[TT[b]];if(ig?pip(pt,ig):hav(cen.lat,cen.lon,g[2],g[3])<=KM[b])return b}return 3})});
+  D.col.iso=new Array(D.n);
+  for(var i=0;i<D.n;i++){var c=D.col.cc[i],k=D.col.city[i];D.col.iso[i]=!tab[c]?-1:(k<0?4:tab[c][k])}}
+var LM2=null,LG2=null,fitKey='';
+function mapInit2(){if(LM2||!window.L)return;
+  LM2=L.map('map2',{scrollWheelZoom:false,dragging:!L.Browser.mobile}).setView([45.6,12],9);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(LM2);
+  LG2=L.featureGroup().addTo(LM2);LM2.on('focus',function(){LM2.scrollWheelZoom.enable()});LM2.on('blur',function(){LM2.scrollWheelZoom.disable()});
+  if(window.ResizeObserver)new ResizeObserver(function(){LM2.invalidateSize()}).observe($('mapw2'))}
+function isoCard(){var rows=rowsPass('iso'),L0=[0,0,0,0,0],Pf=[0,1,2,3,4].map(function(){return new Set()}),tl=0,cs=new Set(),x=D.dict;
+  rows.forEach(function(i){var b=D.col.iso[i];if(b<0)return;L0[b]++;tl++;cs.add(D.col.cc[i]);if(D.rf[i]>=0)Pf[b].add(D.rf[i])});
+  var sel=F.iso,nocen=D.cen.some(function(c){return !c});
+  $('isop').textContent='Da quali fasce di tempo in auto arrivano i like. Ogni città di provenienza è assegnata alla fascia del centro commerciale a cui si riferisce il post. Clicca una fascia per filtrare tutta la pagina.';
+  $('isot').innerHTML='<tr><th>Fascia</th><th>Like</th><th>% like</th><th>Persone</th></tr>'+[0,1,2,3,4].map(function(b){var s=sel&&sel.has(b);
+    return '<tr class="pr'+(s?' sel':'')+'" tabindex="0" role="button" aria-pressed="'+!!s+'" data-d="iso" data-k="n'+b+'"><td><span class="sw" style="--c:'+BC[b]+'"></span>'+ISON[b]+'</td><td>'+fmt(L0[b])+'</td><td>'+(tl?fmt1(L0[b]/tl*100):'0,0')+'%</td><td>'+fmt(Pf[b].size)+'</td></tr>'}).join('');
+  $('ison').textContent='Una persona può comparire in più fasce se ha messo like a post di centri diversi. La città è collocata nel suo centro: i comuni grandi possono stare a cavallo di due fasce.'+(nocen?' Per i centri senza posizione nota non è possibile calcolare le fasce.':'');
+  mapInit2();if(!LM2){$('isom').textContent='Mappa non disponibile (libreria non caricata).';return}
+  LM2.invalidateSize();LG2.clearLayers();
+  var list=Array.from(cs).sort();if(!list.length)list=D.cen.map(function(c,i){return c?i:-1}).filter(function(i){return i>=0});
+  var est=[],apx=[];
+  list.forEach(function(ci){var cen=D.cen[ci];if(!cen)return;var real=true;
+    for(var j=2;j>=0;j--){var ig=cen.iso&&cen.iso[TT[j]],st={color:BC[j],weight:1.5,fillColor:BC[j],fillOpacity:.22};
+      if(ig)LG2.addLayer(L.geoJSON({type:'Feature',geometry:ig},{style:st,interactive:false}));
+      else{real=false;st.dashArray='5 4';LG2.addLayer(L.circle([cen.lat,cen.lon],Object.assign({radius:KM[j]*1000,interactive:false},st)))}}
+    if(!real)est.push(title(x.cc[ci]));if(cen.approx)apx.push(title(x.cc[ci]));
+    LG2.addLayer(L.circleMarker([cen.lat,cen.lon],{radius:6,color:'#fff',weight:2,fillColor:'#15181d',fillOpacity:1}).bindTooltip(title(x.cc[ci])+(cen.approx?' (posizione approssimativa)':'')))});
+  var fit=LG2.getBounds();
+  var cnt=new Map();rows.forEach(function(i){var b=D.col.iso[i],c=D.col.city[i];if(b<0||b>3||c<0||!D.geo[c])return;var e=cnt.get(c);if(!e){e=[0,0,0,0];cnt.set(c,e)}e[b]++});
+  var mx=1;cnt.forEach(function(e){var n=e[0]+e[1]+e[2]+e[3];if(n>mx)mx=n});var ms=12/Math.sqrt(mx),cs2=F.city;
+  cnt.forEach(function(e,c){var n=e[0]+e[1]+e[2]+e[3],b=e.indexOf(Math.max.apply(null,e)),g=D.geo[c],s=cs2&&cs2.has(c);
+    var m=L.circleMarker([g[2],g[3]],{radius:2.5+Math.sqrt(n)*ms,color:s?'#eb6834':'#15181d',weight:s?3:1,fillColor:BC[b],fillOpacity:.85});
+    m.bindTooltip(title(x.city[c])+': '+fmt(n)+' like · '+ISON[b]);m.on('click',function(){toggle('city',c)});LG2.addLayer(m)});
+  var key=list.join(',')+'|'+(est.length?'e':'r');if(key!==fitKey&&fit.isValid()){LM2.fitBounds(fit,{padding:[20,20],maxZoom:11,animate:false});fitKey=key}
+  $('isom').textContent=(est.length?'Fasce stimate con cerchi in linea d\'aria (7,5 · 10 · 15 km) per: '+est.join(', ')+'. Per le isocrone reali di guida apri isocrone.html. ':'Isocrone di guida calcolate. ')+(apx.length?'Posizione approssimativa (centro del comune) per: '+apx.join(', ')+'. ':'')+'I cerchi sulle città sono colorati per fascia.'}
+
 /* ---------- cannibalizzazione ---------- */
 function overlap(){var rows=rowsPass('cc'),x=D.dict,n=x.cc.length,S=x.cc.map(function(){return new Set()}),dt=x.cc.map(function(){return['9','0']});
   rows.forEach(function(i){var c=D.col.cc[i],d=D.posts[D.col.post[i]].date;if(D.rf[i]>=0)S[c].add(D.rf[i]);if(d<dt[c][0])dt[c][0]=d;if(d>dt[c][1])dt[c][1]=d});
@@ -241,7 +291,7 @@ function notes(){var c=D.col.city,ok=0,mapped=0,tot=0,nn=0;for(var i=0;i<D.n;i++
   $('note').innerHTML=['Un «post» è l’insieme di righe con stessa data, insegna, centro, contenuto e dettaglio (i link dei post vecchi sono generici).',
    'Città indicata per '+fmt(ok)+' like su '+fmt(D.n)+'; di questi '+fmt(mapped)+' sono posizionati sulla mappa. Le località non riconosciute e l’estero non compaiono sulla mappa ma restano nei conteggi.',
    'Commenti presenti per '+cp+' post e condivisioni per '+sp+' su '+D.posts.length+': i totali sono parziali.',
-   'I profili dei clicker si basano sul numero di post diversi a cui una persona ha messo like, con i filtri attuali.','I dati sono aggregati: nessun nome di persona è salvato nella dashboard.'].map(function(t){return '<li>'+t+'</li>'}).join('')}
+   'Le fasce di isocrona usano il centro di ciascuna città di provenienza e, per i centri senza isocrone calcolate, cerchi in linea d’aria.','I profili dei clicker si basano sul numero di post diversi a cui una persona ha messo like, con i filtri attuali.','I dati sono aggregati: nessun nome di persona è salvato nella dashboard.'].map(function(t){return '<li>'+t+'</li>'}).join('')}
 
 /* ---------- mappa (Leaflet + OpenStreetMap) ---------- */
 var pts=[],LM=null,LL=null;
@@ -279,8 +329,9 @@ $('more').onclick=function(){showAll=!showAll;posttable()};
 
 /* ---------- avvio ---------- */
 thInit();perInit();
-fetch('data.json',{cache:'no-cache'}).then(function(r){if(!r.ok)throw new Error('data.json non trovato');return r.json()}).then(function(m){
-  D=ingest(m);F={};$('state').textContent='';$('app').hidden=false;fitView();render();
+Promise.all([fetch('data.json',{cache:'no-cache'}).then(function(r){if(!r.ok)throw new Error('data.json non trovato');return r.json()}),
+  fetch('centri.json',{cache:'no-cache'}).then(function(r){return r.ok?r.json():{}}).catch(function(){return {}})]).then(function(a){
+  CEN=a[1]||{};D=ingest(a[0]);computeIso();F={};$('state').textContent='';$('app').hidden=false;fitView();render();
 }).catch(function(e){$('sub').textContent='';$('state').textContent='Non riesco a caricare i dati ('+(e&&e.message||e)+'). Apri la pagina dal suo indirizzo pubblicato su GitHub Pages: dal file scaricato sul computer il browser non permette di leggere data.json.'});
 })();
 </script>
