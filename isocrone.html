@@ -1,0 +1,52 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Calcola isocrone</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--ink:#15181d;--ink2:#4a515c;--line:#e3e6ea;--s1:#2a78d6}
+@media (prefers-color-scheme:dark){:root{--bg:#111317;--surf:#1a1d22;--ink:#f0efec;--ink2:#c3c2b7;--line:#2a2e35;--s1:#3987e5}}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;margin:0;padding:24px 16px}
+.w{max-width:900px;margin:0 auto;background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:20px}
+h1{font-size:20px;margin:0 0 8px}p,li,label{font-size:14px;color:var(--ink2);line-height:1.5}
+button{font:500 13px Inter,system-ui,sans-serif;background:var(--s1);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}button:disabled{opacity:.5}
+input{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf);color:var(--ink)}
+.c{border-top:1px solid var(--line);padding:12px 0;display:grid;gap:8px}.c b{font-size:14px}
+.r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.s{font-size:13px;color:var(--ink2)}
+#map{height:360px;border:1px solid var(--line);border-radius:8px;margin:12px 0}
+</style></head><body><div class="w">
+<h1>Calcola le isocrone dei centri</h1>
+<p>Per ogni centro indica l'indirizzo (o la latitudine e longitudine), poi calcola le fasce di 15, 20 e 30 minuti in auto. Alla fine scarica <code>centri.json</code> e caricalo nel repository, accanto a <code>index.html</code>. I calcoli usano servizi gratuiti di OpenStreetMap: vengono inviate solo le coordinate dei centri, nessun dato sulle persone.</p>
+<p><label>Chiave OpenRouteService (facoltativa, se il servizio predefinito non risponde): <input id="key" size="40" placeholder="incolla qui la chiave"></label></p>
+<div id="list"><p class="s">Carico l'elenco dei centri…</p></div>
+<div id="map"></div>
+<p class="r"><button id="dl" disabled>Scarica centri.json</button><span class="s" id="msg" role="status"></span></p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var T=[15,20,30],COL=['#1d5fb8','#4a8fe0','#9cc2f0'],centres={},names=[],$=function(i){return document.getElementById(i)};
+var map=L.map('map').setView([45.6,12],8);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);var grp=L.featureGroup().addTo(map);
+function title(s){return s.toLowerCase().replace(/(^|[ '\-])(\S)/g,function(m,a,b){return a+b.toUpperCase()})}
+function rd(x){return Array.isArray(x)?x.map(rd):Math.round(x*1e4)/1e4}
+function status(n,t){document.querySelector('[data-s="'+n+'"]').textContent=t}
+function redraw(){grp.clearLayers();names.forEach(function(n){var c=centres[n];if(!isFinite(c.lat)||!isFinite(c.lon))return;
+  for(var j=2;j>=0;j--)if(c.iso&&c.iso[T[j]])grp.addLayer(L.geoJSON({type:'Feature',geometry:c.iso[T[j]]},{style:{color:COL[j],weight:1.5,fillColor:COL[j],fillOpacity:.22}}));
+  grp.addLayer(L.circleMarker([c.lat,c.lon],{radius:6,color:'#fff',weight:2,fillColor:'#15181d',fillOpacity:1}).bindTooltip(title(n)))});
+  if(grp.getLayers().length)map.fitBounds(grp.getBounds(),{padding:[20,20]});
+  $('dl').disabled=!names.some(function(n){return centres[n].iso})}
+function geocode(n){var q=document.querySelector('[data-q="'+n+'"]').value;status(n,'Cerco…');
+  return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(a){
+    if(!a.length)throw new Error('indirizzo non trovato');centres[n].lat=+a[0].lat;centres[n].lon=+a[0].lon;centres[n].iso=null;
+    document.querySelector('[data-lat="'+n+'"]').value=a[0].lat;document.querySelector('[data-lon="'+n+'"]').value=a[0].lon;status(n,'Trovato: '+a[0].display_name);redraw()}).catch(function(e){status(n,'Errore: '+e.message+'. Puoi scrivere latitudine e longitudine a mano.')})}
+function iso(n){var c=centres[n];c.lat=+document.querySelector('[data-lat="'+n+'"]').value;c.lon=+document.querySelector('[data-lon="'+n+'"]').value;
+  if(!isFinite(c.lat)||!isFinite(c.lon)||!c.lat||!c.lon){status(n,'Servono latitudine e longitudine.');return Promise.resolve()}
+  status(n,'Calcolo le isocrone…');var key=$('key').value.trim(),p;
+  if(key)p=fetch('https://api.openrouteservice.org/v2/isochrones/driving-car',{method:'POST',headers:{'Authorization':key,'Content-Type':'application/json'},body:JSON.stringify({locations:[[c.lon,c.lat]],range:[900,1200,1800],range_type:'time'})}).then(function(r){if(!r.ok)throw new Error('OpenRouteService ha risposto '+r.status);return r.json()}).then(function(j){var o={};j.features.forEach(function(f){o[Math.round(f.properties.value/60)]=f.geometry});return o});
+  else p=fetch('https://valhalla1.openstreetmap.de/isochrone?json='+encodeURIComponent(JSON.stringify({locations:[{lat:c.lat,lon:c.lon}],costing:'auto',contours:[{time:15},{time:20},{time:30}],polygons:true,denoise:0.5,generalize:100}))).then(function(r){if(!r.ok)throw new Error('il servizio ha risposto '+r.status);return r.json()}).then(function(j){var o={};j.features.forEach(function(f){o[f.properties.contour]=f.geometry});return o});
+  return p.then(function(o){var r={};T.forEach(function(t){if(!o[t])throw new Error('manca la fascia '+t+"'");r[t]={type:o[t].type,coordinates:rd(o[t].coordinates)}});c.iso=r;c.approx=false;status(n,'Isocrone pronte.');redraw()}).catch(function(e){status(n,'Errore: '+(e&&e.message||e)+'. Riprova tra poco o inserisci una chiave OpenRouteService.')})}
+Promise.all([fetch('data.json').then(function(r){return r.json()}),fetch('centri.json').then(function(r){return r.ok?r.json():{}}).catch(function(){return {}})]).then(function(a){
+  names=JSON.parse(a[0].dict).cc;names.forEach(function(n){var e=a[1][n]||{};centres[n]={lat:e.lat,lon:e.lon,iso:e.iso||null,approx:!!e.approx}});
+  $('list').innerHTML=names.map(function(n){var c=centres[n];return '<div class="c"><b>'+title(n)+'</b><div class="r"><input data-q="'+n+'" size="40" value="'+title(n)+' centro commerciale"><button data-g="'+n+'">Cerca indirizzo</button></div><div class="r"><label>Latitudine <input data-lat="'+n+'" size="10" value="'+(c.lat||'')+'"></label><label>Longitudine <input data-lon="'+n+'" size="10" value="'+(c.lon||'')+'"></label><button data-i="'+n+'">Calcola isocrone</button></div><div class="s" data-s="'+n+'">'+(c.iso?'Isocrone già presenti.':'')+'</div></div>'}).join('');
+  document.querySelectorAll('[data-g]').forEach(function(b){b.onclick=function(){geocode(b.dataset.g)}});
+  document.querySelectorAll('[data-i]').forEach(function(b){b.onclick=function(){iso(b.dataset.i)}});redraw()
+}).catch(function(e){$('list').innerHTML='<p class="s">Non riesco a leggere data.json ('+e.message+'). Apri questa pagina dal suo indirizzo GitHub Pages.</p>'});
+$('dl').onclick=function(){var o={};names.forEach(function(n){var c=centres[n];if(isFinite(c.lat)&&isFinite(c.lon)&&c.lat&&c.lon){o[n]={lat:c.lat,lon:c.lon,approx:false};if(c.iso)o[n].iso=c.iso}});
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download='centri.json';a.click();$('msg').textContent='Carica centri.json nel repository (Add file → Upload files).'};
+</script></body></html>
